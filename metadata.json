@@ -1,0 +1,6 @@
+{
+  "name": "NGA Florist - Toko Bunga Jambi",
+  "description": "Aplikasi demo toko bunga dan manajemen pesanan florist untuk UMKM di Jambi, Indonesia. Dilengkapi katalog buket, papan bunga, hampers, dan pemesanan WhatsApp terstruktur.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
