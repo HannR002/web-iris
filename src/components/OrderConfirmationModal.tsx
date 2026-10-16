@@ -85,17 +85,24 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
             </p>
           </div>
 
-          {/* Status Tracker Banner */}
-          <div className={`p-3.5 rounded-xl border text-xs flex items-center justify-between ${
+          {/* Status Tracker Banner (Transparent: indicates link opened, not falsified guaranteed delivery) */}
+          <div className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
             isDispatched
               ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
               : 'bg-amber-50 border-amber-200 text-amber-900'
           }`}>
-            <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${isDispatched ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <span>
-                Status Pesanan: <strong>{isDispatched ? 'Pesan WhatsApp Sudah Terkirim' : 'Menunggu Pengiriman Chat ke Florist'}</strong>
-              </span>
+            <div className="flex items-start sm:items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full mt-1 sm:mt-0 shrink-0 ${isDispatched ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              <div>
+                <p>
+                  Status WhatsApp: <strong>{isDispatched ? 'Tautan Chat WhatsApp Telah Dibuka' : 'Belum Membuka Chat WhatsApp'}</strong>
+                </p>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  {isDispatched
+                    ? 'Tautan pesan otomatis sudah dibuka. Harap pastikan Anda menekan tombol "Kirim (Send)" di aplikasi WhatsApp.'
+                    : 'Klik tombol di bawah untuk membuka template rincian pesanan langsung di WhatsApp kasir florist.'}
+                </p>
+              </div>
             </div>
             <button
               type="button"
@@ -105,13 +112,13 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
                   onMarkWaDispatched(order.id);
                 }
               }}
-              className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors shrink-0 ${
                 isDispatched
-                  ? 'bg-emerald-200 text-emerald-800'
+                  ? 'bg-emerald-200/80 text-emerald-800'
                   : 'bg-amber-200 hover:bg-amber-300 text-amber-900 cursor-pointer'
               }`}
             >
-              {isDispatched ? '✓ Sudah Ditandai' : 'Tandai Sudah Kirim'}
+              {isDispatched ? '✓ Tautan Dikonfirmasi' : 'Tandai Sudah Buka WA'}
             </button>
           </div>
 

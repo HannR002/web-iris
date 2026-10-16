@@ -13,6 +13,7 @@ import {
   generateOrderId,
   syncCartWithCatalog,
   calculateDashboardMetrics,
+  validateImportData,
 } from './floristLogic.ts';
 import type { CartItem, CheckoutFormData, MerchantConfig, Order, Product } from '../types/florist.ts';
 
@@ -379,4 +380,179 @@ test('calculateDashboardMetrics cleanly separates confirmed revenue from unverif
   assert.equal(metrics.confirmedRevenue, 500000); // Only order 2
   assert.equal(metrics.inProductionCount, 2); // order 1 ('baru') + order 2 ('dirangkai')
 });
+
+test('REGRESSION: syncCartWithCatalog detects stock change when price remains identical', () => {
+  const initialCatalog: Product[] = [
+    {
+      id: 'p-1',
+      name: 'Mawar Pink Cantik',
+      category: 'buket',
+      price: 250000,
+      stockStatus: 'tersedia',
+      description: '',
+      flowerTypes: ['Mawar'],
+      availableColors: [],
+      cardIncluded: true,
+      estimatedPrepTime: '2 Jam',
+      imageType: 'bouquet-rose',
+    },
+  ];
+
+  const cart: CartItem[] = [
+    {
+      id: 'cart-1',
+      productId: 'p-1',
+      product: { ...initialCatalog[0] },
+      quantity: 2,
+      selectedColor: { id: 'c', name: 'Pink', hex: '#FFC0CB' },
+      cardGreeting: { to: '', message: '', from: '' },
+      customNotes: '',
+      subtotal: 500000,
+    },
+  ];
+
+  // Price stays identical (250000), but stockStatus changes to 'habis'
+  const updatedCatalog: Product[] = [
+    {
+      ...initialCatalog[0],
+      stockStatus: 'habis',
+    },
+  ];
+
+  const result = syncCartWithCatalog(cart, updatedCatalog);
+
+  // Price did not change
+  assert.equal(result.priceChangedCount, 0);
+  // BUT stock change MUST be detected
+  assert.equal(result.stockChangedCount, 1);
+  assert.equal(result.hasChanges, true);
+  assert.equal(result.hasUnavailableItems, true);
+  assert.ok(result.unavailableProductNames.includes('Mawar Pink Cantik'));
+  assert.equal(result.updatedCart[0].product.stockStatus, 'habis');
+});
+
+test('REGRESSION: validateImportData accepts fully valid NGA Florist backup JSON', () => {
+  const validPayload = {
+    app: 'NGA Florist Jambi',
+    exportDate: '2026-10-16T12:00:00.000Z',
+    merchantConfig: {
+      storeName: 'NGA Florist Jambi',
+      whatsappNumber: '6289699161526',
+      displayPhone: '0896-9916-1526',
+      storeAddress: 'Jl. Kolonel Abunjani No. 42, Sipin, Kota Jambi',
+      operatingHours: '07:30 - 21:00 WIB',
+      instagramHandle: '@ngaflorist.jambi',
+      freeDeliveryMinAmount: 500000,
+    },
+    products: [
+      {
+        id: 'p-1',
+        name: 'Buket Mawar',
+        category: 'buket',
+        price: 350000,
+        stockStatus: 'tersedia',
+        description: 'Mawar segar',
+        flowerTypes: ['Mawar'],
+        availableColors: [],
+        cardIncluded: true,
+        estimatedPrepTime: '2 Jam',
+        imageType: 'bouquet-rose',
+      },
+    ],
+    orders: [
+      {
+        id: 'NGA-2410-001',
+        customerName: 'Ahmad Fauzi',
+        customerPhone: '081234567890',
+        recipientName: 'Dewi Lestari',
+        recipientPhone: '081234567890',
+        deliveryDistrict: 'Telanaipura',
+        deliveryAddress: 'Jl. Telanaipura No. 1',
+        deliveryDate: '2026-10-25',
+        deliveryTimeSlot: 'Pagi',
+        items: [
+          {
+            id: 'item-1',
+            productId: 'p-1',
+            quantity: 1,
+            subtotal: 350000,
+          },
+        ],
+        itemsSubtotal: 350000,
+        deliveryFee: 15000,
+        totalAmount: 365000,
+        status: 'dikonfirmasi',
+        createdAt: '2026-10-16T10:00:00Z',
+      },
+    ],
+  };
+
+  const validation = validateImportData(validPayload);
+  assert.equal(validation.isValid, true);
+  assert.equal(validation.errors.length, 0);
+  assert.equal(validation.summary.productCount, 1);
+  assert.equal(validation.summary.orderCount, 1);
+  assert.equal(validation.summary.hasConfig, true);
+  assert.ok(validation.sanitizedData?.products);
+  assert.ok(validation.sanitizedData?.orders);
+  assert.ok(validation.sanitizedData?.config);
+});
+
+test('REGRESSION: validateImportData rejects malformed, invalid, or corrupted JSON data', () => {
+  // Case 1: Non-object
+  assert.equal(validateImportData(null).isValid, false);
+  assert.equal(validateImportData('invalid string').isValid, false);
+  assert.equal(validateImportData([1, 2, 3]).isValid, false);
+
+  // Case 2: Object with no known florist sections
+  const emptyObj = { foo: 'bar', randomKey: 123 };
+  const emptyVal = validateImportData(emptyObj);
+  assert.equal(emptyVal.isValid, false);
+  assert.ok(emptyVal.errors[0].includes('tidak memuat bagian data yang dikenali'));
+
+  // Case 3: Invalid product fields (missing name, negative price, unknown category)
+  const invalidProdPayload = {
+    products: [
+      {
+        id: 'p-1',
+        name: '', // Empty name
+        price: -50000, // Negative price
+        category: 'makanan-kucing', // Unknown category
+        stockStatus: 'tersedia',
+      },
+    ],
+  };
+  const prodVal = validateImportData(invalidProdPayload);
+  assert.equal(prodVal.isValid, false);
+  assert.ok(prodVal.errors.some((e) => e.includes('name')));
+  assert.ok(prodVal.errors.some((e) => e.includes('price')));
+  assert.ok(prodVal.errors.some((e) => e.includes('kategori')));
+
+  // Case 4: Invalid order (missing customerName, empty items, invalid status)
+  const invalidOrderPayload = {
+    orders: [
+      {
+        id: 'ord-1',
+        customerName: '',
+        recipientName: 'Penerima',
+        deliveryDistrict: 'Danau Sipin',
+        totalAmount: 100000,
+        status: 'status-ngawur',
+        items: [],
+      },
+    ],
+  };
+  const ordVal = validateImportData(invalidOrderPayload);
+  assert.equal(ordVal.isValid, false);
+  assert.ok(ordVal.errors.some((e) => e.includes('customerName')));
+  assert.ok(ordVal.errors.some((e) => e.includes('status pesanan')));
+  assert.ok(ordVal.errors.some((e) => e.includes('items')));
+});
+
+test('REGRESSION: WhatsApp link generation targets the requested merchant number 6289699161526', () => {
+  const targetNumber = '089699161526';
+  const url = createWhatsAppUrl(targetNumber, 'Halo Florist');
+  assert.equal(url, 'https://wa.me/6289699161526?text=Halo%20Florist');
+});
+
 

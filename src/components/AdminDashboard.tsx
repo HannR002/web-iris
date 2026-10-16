@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import type { MerchantConfig, Order, OrderStatus, Product, ProductCategory, StockStatus } from '../types/florist.ts';
-import { calculateDashboardMetrics, createWhatsAppUrl, formatIDR, formatIndonesianDate, getOrderStatusBadge } from '../utils/floristLogic.ts';
+import { calculateDashboardMetrics, createWhatsAppUrl, formatIDR, formatIndonesianDate, getOrderStatusBadge, validateImportData, type ImportValidationResult } from '../utils/floristLogic.ts';
 import { FloralIllustration } from './FloralIllustration.tsx';
 import {
   Search,
@@ -127,6 +127,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [configFreeDelivery, setConfigFreeDelivery] = useState(merchantConfig.freeDeliveryMinAmount);
   const [configSavedToast, setConfigSavedToast] = useState(false);
   const [importStatusToast, setImportStatusToast] = useState<string | null>(null);
+
+  // Safe import confirmation & schema validation modal states
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importValidationResult, setImportValidationResult] = useState<ImportValidationResult | null>(null);
 
   // Calculate detailed financial KPIs separating confirmed revenue from unverified new orders
   const metrics = calculateDashboardMetrics(orders);
@@ -282,27 +287,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setImportFileName(file.name);
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const parsed = JSON.parse(reader.result as string);
-        if (onImportData) {
-          onImportData({
-            products: parsed.products,
-            orders: parsed.orders,
-            config: parsed.merchantConfig || parsed.config,
-          });
-          setImportStatusToast('Data demo berhasil diimpor!');
-        } else {
-          setImportStatusToast('Fungsi impor data aktif.');
-        }
-        setTimeout(() => setImportStatusToast(null), 3000);
-      } catch {
-        alert('File JSON tidak valid atau struktur data tidak sesuai.');
+        const validation = validateImportData(parsed);
+        setImportValidationResult(validation);
+        setShowImportModal(true);
+      } catch (err: any) {
+        setImportValidationResult({
+          isValid: false,
+          errors: ['File bukan format JSON yang valid: ' + (err?.message || 'Syntax error')],
+          summary: { productCount: 0, orderCount: 0, hasConfig: false },
+        });
+        setShowImportModal(true);
       }
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  const handleConfirmImport = () => {
+    if (!importValidationResult?.isValid || !importValidationResult.sanitizedData) {
+      return;
+    }
+
+    if (onImportData) {
+      onImportData(importValidationResult.sanitizedData);
+      setImportStatusToast(
+        `Berhasil mengimpor ${importValidationResult.summary.productCount} produk & ${importValidationResult.summary.orderCount} pesanan!`
+      );
+      setTimeout(() => setImportStatusToast(null), 4000);
+    }
+    setShowImportModal(false);
+    setImportValidationResult(null);
   };
 
   return (
@@ -590,12 +609,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <div className="flex items-center gap-2 mt-0.5">
                                 <span className="text-[11px] text-stone-500 font-mono">{order.customerPhone}</span>
                                 {order.waDispatched ? (
-                                  <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.2 rounded font-semibold">
-                                    WA Terkirim ✓
+                                  <span
+                                    className="text-[10px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded font-medium"
+                                    title="Pelanggan telah membuka tautan template chat WhatsApp. Verifikasi pesan riil tetap dipastikan di WA kasir."
+                                  >
+                                    Link WA Dibuka ✓
                                   </span>
                                 ) : (
-                                  <span className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.2 rounded">
-                                    Menunggu WA
+                                  <span
+                                    className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-medium"
+                                    title="Pelanggan belum mengklik tautan chat WhatsApp."
+                                  >
+                                    Belum Buka WA
                                   </span>
                                 )}
                               </div>
@@ -1643,6 +1668,127 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Konfirmasi Aman & Validasi Skema Impor Data JSON */}
+      {showImportModal && importValidationResult && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl p-6 border border-stone-200 shadow-2xl space-y-4">
+            
+            <div className="flex items-center justify-between pb-3 border-b border-stone-200">
+              <div className="flex items-center gap-2">
+                {importValidationResult.isValid ? (
+                  <Package className="w-5 h-5 text-[#8B2635]" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-rose-600" />
+                )}
+                <h3 className="font-serif text-lg font-bold text-stone-900">
+                  {importValidationResult.isValid ? 'Konfirmasi Impor Data JSON' : 'Gagal Validasi Skema JSON'}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportValidationResult(null);
+                }}
+                className="text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-xs space-y-3">
+              <div className="bg-stone-50 p-2.5 rounded-lg border border-stone-200 flex items-center justify-between">
+                <span className="text-stone-500">Nama File:</span>
+                <span className="font-mono font-medium text-stone-800 truncate max-w-xs">{importFileName}</span>
+              </div>
+
+              {importValidationResult.isValid ? (
+                <>
+                  <div className="space-y-1.5 p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl">
+                    <p className="font-semibold text-emerald-950">Ringkasan Isi Berkas Valid:</p>
+                    <ul className="space-y-1 text-emerald-800 text-[11px]">
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span><strong>{importValidationResult.summary.productCount}</strong> Produk bunga siap dimuat</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span><strong>{importValidationResult.summary.orderCount}</strong> Catatan pesanan pelanggan</span>
+                      </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>
+                          {importValidationResult.summary.hasConfig
+                            ? 'Konfigurasi profil toko & nomor WhatsApp terdaftar'
+                            : 'Konfigurasi profil toko tidak diubah (mempertahankan aktif)'}
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5 text-amber-900">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>Konfirmasi Tindakan Timpa Data</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-amber-800">
+                      Tindakan ini akan <strong>menimpa data produk dan pesanan yang sedang aktif</strong> di penyimpanan browser ini. Pastikan Anda telah melakukan ekspor backup jika masih membutuhkan data sebelumnya.
+                    </p>
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowImportModal(false);
+                        setImportValidationResult(null);
+                      }}
+                      className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg font-medium cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmImport}
+                      className="px-5 py-2 bg-[#8B2635] hover:bg-[#721F2B] text-white rounded-lg font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Lanjutkan Timpa Data</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-rose-900">
+                    <p className="font-bold">File tidak dapat diimpor karena tidak sesuai skema NGA Florist:</p>
+                    <ul className="list-disc pl-4 space-y-1 text-[11px] text-rose-800 max-h-48 overflow-y-auto">
+                      {importValidationResult.errors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <p className="text-[11px] text-stone-500">
+                    Data toko dan pesanan Anda yang sedang aktif tidak mengalami perubahan apapun.
+                  </p>
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowImportModal(false);
+                        setImportValidationResult(null);
+                      }}
+                      className="px-4 py-2 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded-lg font-medium cursor-pointer"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                </>
+              )}
+
+            </div>
           </div>
         </div>
       )}

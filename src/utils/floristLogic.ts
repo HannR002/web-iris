@@ -333,7 +333,8 @@ export function generateOrderId(existingOrderIds: string[] = []): string {
 
 /**
  * Synchronizes cart items with current catalog prices and availability.
- * Flags out-of-stock items and recalculates subtotal if prices have changed.
+ * Flags out-of-stock items, detects status changes even when price remains identical,
+ * and recalculates subtotal if prices have changed.
  */
 export function syncCartWithCatalog(
   cart: CartItem[],
@@ -343,11 +344,14 @@ export function syncCartWithCatalog(
   hasUnavailableItems: boolean;
   unavailableProductNames: string[];
   priceChangedCount: number;
+  stockChangedCount: number;
+  hasChanges: boolean;
 } {
   const catalogMap = new Map(catalog.map((p) => [p.id, p]));
   let hasUnavailableItems = false;
   const unavailableProductNames: string[] = [];
   let priceChangedCount = 0;
+  let stockChangedCount = 0;
 
   const updatedCart = cart.map((item) => {
     const currentProduct = catalogMap.get(item.productId);
@@ -366,6 +370,11 @@ export function syncCartWithCatalog(
       }
     }
 
+    // Check if stock status changed even if price didn't change
+    if (currentProduct.stockStatus !== item.product.stockStatus) {
+      stockChangedCount++;
+    }
+
     if (currentProduct.price !== item.product.price) {
       priceChangedCount++;
       return {
@@ -381,11 +390,203 @@ export function syncCartWithCatalog(
     };
   });
 
+  const hasChanges = priceChangedCount > 0 || stockChangedCount > 0;
+
   return {
     updatedCart,
     hasUnavailableItems,
     unavailableProductNames,
     priceChangedCount,
+    stockChangedCount,
+    hasChanges,
+  };
+}
+
+export type ImportValidationResult = {
+  isValid: boolean;
+  errors: string[];
+  summary: {
+    productCount: number;
+    orderCount: number;
+    hasConfig: boolean;
+  };
+  sanitizedData?: {
+    products?: Product[];
+    orders?: Order[];
+    config?: MerchantConfig;
+  };
+};
+
+/**
+ * Validates incoming JSON data schema before importing into local storage/state.
+ * Prevents corrupted or arbitrary JSON files from crashing the application.
+ */
+export function validateImportData(rawData: unknown): ImportValidationResult {
+  const errors: string[] = [];
+
+  if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
+    return {
+      isValid: false,
+      errors: ['File JSON harus berupa objek data NGA Florist yang valid.'],
+      summary: { productCount: 0, orderCount: 0, hasConfig: false },
+    };
+  }
+
+  const obj = rawData as Record<string, unknown>;
+  const rawProducts = obj.products;
+  const rawOrders = obj.orders;
+  const rawConfig = obj.merchantConfig || obj.config;
+
+  let validatedProducts: Product[] | undefined = undefined;
+  let validatedOrders: Order[] | undefined = undefined;
+  let validatedConfig: MerchantConfig | undefined = undefined;
+
+  // At least one valid section must exist
+  if (!rawProducts && !rawOrders && !rawConfig) {
+    return {
+      isValid: false,
+      errors: ['File JSON tidak memuat bagian data yang dikenali (products, orders, atau merchantConfig).'],
+      summary: { productCount: 0, orderCount: 0, hasConfig: false },
+    };
+  }
+
+  // 1. Validate Products
+  if (rawProducts !== undefined) {
+    if (!Array.isArray(rawProducts)) {
+      errors.push('Bagian "products" harus berupa array daftar produk.');
+    } else {
+      const validProducts: Product[] = [];
+      const validCategories = ['buket', 'papan-bunga', 'wisuda', 'pernikahan', 'hampers', 'semua'];
+      const validStockStatuses = ['tersedia', 'preorder', 'habis'];
+
+      for (let i = 0; i < rawProducts.length; i++) {
+        const p = rawProducts[i];
+        if (!p || typeof p !== 'object') {
+          errors.push(`Produk #${i + 1} tidak valid (bukan objek).`);
+          continue;
+        }
+
+        const prodObj = p as Record<string, unknown>;
+        if (typeof prodObj.id !== 'string' || !prodObj.id.trim()) {
+          errors.push(`Produk #${i + 1} harus memiliki 'id' berupa teks.`);
+        }
+        if (typeof prodObj.name !== 'string' || !prodObj.name.trim()) {
+          errors.push(`Produk #${i + 1} harus memiliki 'name' berupa teks.`);
+        }
+        if (typeof prodObj.price !== 'number' || isNaN(prodObj.price) || prodObj.price < 0) {
+          errors.push(`Produk #${i + 1} harus memiliki 'price' angka yang valid (>= 0).`);
+        }
+        if (typeof prodObj.category !== 'string' || !validCategories.includes(prodObj.category)) {
+          errors.push(`Produk #${i + 1} memiliki kategori '${prodObj.category}' yang tidak dikenali.`);
+        }
+        if (typeof prodObj.stockStatus !== 'string' || !validStockStatuses.includes(prodObj.stockStatus)) {
+          errors.push(`Produk #${i + 1} memiliki status stok '${prodObj.stockStatus}' yang tidak valid.`);
+        }
+
+        if (errors.length === 0) {
+          validProducts.push(prodObj as unknown as Product);
+        }
+      }
+
+      if (errors.length === 0) {
+        validatedProducts = validProducts;
+      }
+    }
+  }
+
+  // 2. Validate Orders
+  if (rawOrders !== undefined) {
+    if (!Array.isArray(rawOrders)) {
+      errors.push('Bagian "orders" harus berupa array daftar pesanan.');
+    } else {
+      const validOrders: Order[] = [];
+      const validOrderStatuses = [
+        'baru',
+        'dikonfirmasi',
+        'dirangkai',
+        'siap-kirim',
+        'diantar',
+        'selesai',
+        'dibatalkan',
+      ];
+
+      for (let i = 0; i < rawOrders.length; i++) {
+        const o = rawOrders[i];
+        if (!o || typeof o !== 'object') {
+          errors.push(`Pesanan #${i + 1} tidak valid (bukan objek).`);
+          continue;
+        }
+
+        const ordObj = o as Record<string, unknown>;
+        if (typeof ordObj.id !== 'string' || !ordObj.id.trim()) {
+          errors.push(`Pesanan #${i + 1} harus memiliki 'id'.`);
+        }
+        if (typeof ordObj.customerName !== 'string' || !ordObj.customerName.trim()) {
+          errors.push(`Pesanan #${i + 1} harus memiliki nama pemesan (customerName).`);
+        }
+        if (typeof ordObj.recipientName !== 'string' || !ordObj.recipientName.trim()) {
+          errors.push(`Pesanan #${i + 1} harus memiliki nama penerima (recipientName).`);
+        }
+        if (typeof ordObj.deliveryDistrict !== 'string' || !ordObj.deliveryDistrict.trim()) {
+          errors.push(`Pesanan #${i + 1} harus memiliki kecamatan tujuan (deliveryDistrict).`);
+        }
+        if (typeof ordObj.totalAmount !== 'number' || isNaN(ordObj.totalAmount) || ordObj.totalAmount < 0) {
+          errors.push(`Pesanan #${i + 1} harus memiliki totalAmount angka >= 0.`);
+        }
+        if (typeof ordObj.status !== 'string' || !validOrderStatuses.includes(ordObj.status)) {
+          errors.push(`Pesanan #${i + 1} memiliki status pesanan '${ordObj.status}' yang tidak valid.`);
+        }
+        if (!Array.isArray(ordObj.items) || ordObj.items.length === 0) {
+          errors.push(`Pesanan #${i + 1} harus memiliki minimal 1 item di dalam array 'items'.`);
+        }
+
+        if (errors.length === 0) {
+          validOrders.push(ordObj as unknown as Order);
+        }
+      }
+
+      if (errors.length === 0) {
+        validatedOrders = validOrders;
+      }
+    }
+  }
+
+  // 3. Validate Merchant Config
+  if (rawConfig !== undefined) {
+    if (!rawConfig || typeof rawConfig !== 'object' || Array.isArray(rawConfig)) {
+      errors.push('Bagian konfigurasi toko harus berupa objek.');
+    } else {
+      const confObj = rawConfig as Record<string, unknown>;
+      if (typeof confObj.storeName !== 'string' || !confObj.storeName.trim()) {
+        errors.push('Konfigurasi toko harus memiliki storeName teks.');
+      }
+      if (typeof confObj.whatsappNumber !== 'string' || !confObj.whatsappNumber.trim()) {
+        errors.push('Konfigurasi toko harus memiliki whatsappNumber teks.');
+      }
+
+      if (errors.length === 0) {
+        validatedConfig = confObj as unknown as MerchantConfig;
+      }
+    }
+  }
+
+  const isValid = errors.length === 0;
+
+  return {
+    isValid,
+    errors,
+    summary: {
+      productCount: validatedProducts ? validatedProducts.length : (Array.isArray(rawProducts) ? rawProducts.length : 0),
+      orderCount: validatedOrders ? validatedOrders.length : (Array.isArray(rawOrders) ? rawOrders.length : 0),
+      hasConfig: !!validatedConfig,
+    },
+    sanitizedData: isValid
+      ? {
+          products: validatedProducts,
+          orders: validatedOrders,
+          config: validatedConfig,
+        }
+      : undefined,
   };
 }
 

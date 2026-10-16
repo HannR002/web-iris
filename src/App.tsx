@@ -16,12 +16,6 @@ import { Search, Sparkles, HelpCircle, ChevronRight, Check } from 'lucide-react'
 
 export default function App() {
   // Always declare all hooks at the top level unconditionally
-  const searchParams = new URLSearchParams(window.location.search);
-  const initialViewParam = searchParams.get('view') === 'admin' ? 'admin' : 'store';
-
-  // Persistence in localStorage with fallback to default mock data
-  const [currentView, setCurrentView] = useState<'store' | 'admin'>(initialViewParam);
-  
   // Admin authentication state (simulated for demo, persisted in sessionStorage)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     try {
@@ -31,7 +25,32 @@ export default function App() {
     }
   });
 
-  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+  // Check URL query param safely: only allow 'admin' view if already authenticated
+  const [currentView, setCurrentView] = useState<'store' | 'admin'>(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const requestedView = searchParams.get('view');
+    try {
+      const isAuth = sessionStorage.getItem('nga_florist_admin_auth') === 'true';
+      if (requestedView === 'admin' && isAuth) {
+        return 'admin';
+      }
+    } catch {}
+    return 'store';
+  });
+
+  // If ?view=admin was requested but user is NOT authenticated, prompt login modal without granting dashboard access
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('view') === 'admin') {
+      try {
+        const isAuth = sessionStorage.getItem('nga_florist_admin_auth') === 'true';
+        return !isAuth;
+      } catch {
+        return true;
+      }
+    }
+    return false;
+  });
 
   const [products, setProducts] = useState<Product[]>(() => {
     try {
@@ -54,7 +73,16 @@ export default function App() {
   const [merchantConfig, setMerchantConfig] = useState<MerchantConfig>(() => {
     try {
       const saved = localStorage.getItem('nga_florist_config');
-      return saved ? JSON.parse(saved) : INITIAL_MERCHANT_CONFIG;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Otomatis sinkronkan jika masih menggunakan nomor lama +62 812-7418-9000
+        if (parsed.whatsappNumber === '6281274189000' || parsed.displayPhone === '0812-7418-9000') {
+          parsed.whatsappNumber = INITIAL_MERCHANT_CONFIG.whatsappNumber;
+          parsed.displayPhone = INITIAL_MERCHANT_CONFIG.displayPhone;
+        }
+        return parsed;
+      }
+      return INITIAL_MERCHANT_CONFIG;
     } catch {
       return INITIAL_MERCHANT_CONFIG;
     }
@@ -102,11 +130,11 @@ export default function App() {
     } catch {}
   }, [cart]);
 
-  // Synchronize cart with current catalog prices and availability
+  // Synchronize cart with current catalog prices and availability (including stock status changes)
   useEffect(() => {
     if (cart.length > 0 && products.length > 0) {
-      const { updatedCart, priceChangedCount } = syncCartWithCatalog(cart, products);
-      if (priceChangedCount > 0) {
+      const { updatedCart, hasChanges } = syncCartWithCatalog(cart, products);
+      if (hasChanges) {
         setCart(updatedCart);
       }
     }
@@ -287,8 +315,8 @@ export default function App() {
         activeCategory={selectedCategory}
       />
 
-      {/* Main Content Router */}
-      {currentView === 'admin' ? (
+      {/* Main Content Router with strict Auth Guard */}
+      {currentView === 'admin' && isAdminAuthenticated ? (
         <AdminDashboard
           orders={orders}
           onUpdateOrderStatus={handleUpdateOrderStatus}

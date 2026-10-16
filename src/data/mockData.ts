@@ -24,8 +24,8 @@ export const DELIVERY_TIME_SLOTS = [
 
 export const INITIAL_MERCHANT_CONFIG: MerchantConfig = {
   storeName: 'NGA Florist Jambi',
-  whatsappNumber: '6281274189000',
-  displayPhone: '0812-7418-9000',
+  whatsappNumber: '6289699161526',
+  displayPhone: '0896-9916-1526',
   storeAddress: 'Jl. Kolonel Abunjani No. 42, Sipin, Kota Jambi (Depan Tugu Juang)',
   operatingHours: 'Setiap Hari: 07:30 - 21:00 WIB',
   instagramHandle: '@ngaflorist.jambi',
