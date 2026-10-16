@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { CartItem, FlowerColorVariant, MerchantConfig, Order, OrderStatus, Product, ProductCategory, StockStatus } from './types/florist.ts';
 import { INITIAL_MERCHANT_CONFIG, INITIAL_PRODUCTS, INITIAL_SAMPLE_ORDERS } from './data/mockData.ts';
-import { filterProducts } from './utils/floristLogic.ts';
+import { filterProducts, syncCartWithCatalog } from './utils/floristLogic.ts';
 import { Navbar } from './components/Navbar.tsx';
 import { HeroSection } from './components/HeroSection.tsx';
 import { ProductCard } from './components/ProductCard.tsx';
@@ -10,17 +10,29 @@ import { CartDrawer } from './components/CartDrawer.tsx';
 import { CheckoutModal } from './components/CheckoutModal.tsx';
 import { OrderConfirmationModal } from './components/OrderConfirmationModal.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
+import { AdminLoginModal } from './components/AdminLoginModal.tsx';
 import { Footer } from './components/Footer.tsx';
 import { Search, Sparkles, HelpCircle, ChevronRight, Check } from 'lucide-react';
 
 export default function App() {
-  // Check URL parameters for view
+  // Always declare all hooks at the top level unconditionally
   const searchParams = new URLSearchParams(window.location.search);
   const initialViewParam = searchParams.get('view') === 'admin' ? 'admin' : 'store';
 
   // Persistence in localStorage with fallback to default mock data
   const [currentView, setCurrentView] = useState<'store' | 'admin'>(initialViewParam);
   
+  // Admin authentication state (simulated for demo, persisted in sessionStorage)
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('nga_florist_admin_auth') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
+
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const saved = localStorage.getItem('nga_florist_products');
@@ -90,6 +102,46 @@ export default function App() {
     } catch {}
   }, [cart]);
 
+  // Synchronize cart with current catalog prices and availability
+  useEffect(() => {
+    if (cart.length > 0 && products.length > 0) {
+      const { updatedCart, priceChangedCount } = syncCartWithCatalog(cart, products);
+      if (priceChangedCount > 0) {
+        setCart(updatedCart);
+      }
+    }
+  }, [products]);
+
+  // View navigation handler with admin login gate
+  const handleViewChange = (targetView: 'store' | 'admin') => {
+    if (targetView === 'admin') {
+      if (isAdminAuthenticated) {
+        setCurrentView('admin');
+      } else {
+        setIsAdminLoginOpen(true);
+      }
+    } else {
+      setCurrentView('store');
+    }
+  };
+
+  const handleAdminLoginSuccess = () => {
+    setIsAdminAuthenticated(true);
+    try {
+      sessionStorage.setItem('nga_florist_admin_auth', 'true');
+    } catch {}
+    setIsAdminLoginOpen(false);
+    setCurrentView('admin');
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminAuthenticated(false);
+    try {
+      sessionStorage.removeItem('nga_florist_admin_auth');
+    } catch {}
+    setCurrentView('store');
+  };
+
   // Cart operations
   const handleAddToCart = (
     product: Product,
@@ -98,6 +150,8 @@ export default function App() {
     cardGreeting: { to: string; message: string; from: string },
     customNotes: string
   ) => {
+    if (product.stockStatus === 'habis') return;
+
     const newItem: CartItem = {
       id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       productId: product.id,
@@ -147,6 +201,12 @@ export default function App() {
     setConfirmedOrder(newOrder);
   };
 
+  const handleMarkWaDispatched = (orderId: string) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, waDispatched: true } : o))
+    );
+  };
+
   // Admin operations
   const handleUpdateOrderStatus = (orderId: string, newStatus: OrderStatus) => {
     setOrders((prev) =>
@@ -168,6 +228,26 @@ export default function App() {
 
   const handleAddProduct = (newProd: Product) => {
     setProducts((prev) => [newProd, ...prev]);
+  };
+
+  const handleUpdateProduct = (updatedProd: Product) => {
+    setProducts((prev) =>
+      prev.map((p) => (p.id === updatedProd.id ? updatedProd : p))
+    );
+  };
+
+  const handleDeleteProduct = (productId: string) => {
+    setProducts((prev) => prev.filter((p) => p.id !== productId));
+  };
+
+  const handleImportData = (importedData: {
+    products?: Product[];
+    orders?: Order[];
+    config?: MerchantConfig;
+  }) => {
+    if (importedData.products) setProducts(importedData.products);
+    if (importedData.orders) setOrders(importedData.orders);
+    if (importedData.config) setMerchantConfig(importedData.config);
   };
 
   const handleResetDemoData = () => {
@@ -196,11 +276,12 @@ export default function App() {
       {/* Top Navbar */}
       <Navbar
         currentView={currentView}
-        onViewChange={setCurrentView}
+        onViewChange={handleViewChange}
         cartCount={cart.reduce((sum, i) => sum + i.quantity, 0)}
         onOpenCart={() => setIsCartOpen(true)}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
+          if (currentView !== 'store') setCurrentView('store');
           scrollToCatalog();
         }}
         activeCategory={selectedCategory}
@@ -215,10 +296,14 @@ export default function App() {
           onUpdateProductStock={handleUpdateProductStock}
           onUpdateProductPrice={handleUpdateProductPrice}
           onAddProduct={handleAddProduct}
+          onUpdateProduct={handleUpdateProduct}
+          onDeleteProduct={handleDeleteProduct}
           merchantConfig={merchantConfig}
           onUpdateMerchantConfig={setMerchantConfig}
           onResetDemoData={handleResetDemoData}
           onBackToStore={() => setCurrentView('store')}
+          onLogoutAdmin={handleAdminLogout}
+          onImportData={handleImportData}
         />
       ) : (
         <main className="flex-1">
@@ -263,7 +348,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Interactive Filter Tabs / Segmented Controls (Buttons Allowed per Frontend Design) */}
+            {/* Interactive Filter Tabs / Segmented Controls */}
             <div className="flex items-center gap-2 overflow-x-auto py-4 scrollbar-none">
               {(
                 [
@@ -289,7 +374,7 @@ export default function App() {
               ))}
             </div>
 
-            {/* Product Grid: 3-column desktop */}
+            {/* Product Grid: 4-column desktop */}
             {filteredProductsList.length === 0 ? (
               <div className="py-16 text-center text-stone-500 bg-white rounded-2xl border border-stone-200 p-8 my-6">
                 <p className="font-serif text-lg font-semibold text-stone-800">
@@ -303,7 +388,7 @@ export default function App() {
                     setCatalogSearch('');
                     setSelectedCategory('semua');
                   }}
-                  className="mt-4 px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold rounded-lg"
+                  className="mt-4 px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold rounded-lg cursor-pointer"
                 >
                   Tampilkan Semua Bunga
                 </button>
@@ -447,7 +532,15 @@ export default function App() {
           if (currentView !== 'store') setCurrentView('store');
           scrollToCatalog();
         }}
-        onOpenAdmin={() => setCurrentView('admin')}
+        onOpenAdmin={() => handleViewChange('admin')}
+      />
+
+      {/* Admin Login Gate Modal */}
+      <AdminLoginModal
+        isOpen={isAdminLoginOpen}
+        onLoginSuccess={handleAdminLoginSuccess}
+        onCancel={() => setIsAdminLoginOpen(false)}
+        merchantConfig={merchantConfig}
       />
 
       {/* Modals & Drawers */}
@@ -476,15 +569,17 @@ export default function App() {
         items={cart}
         merchantConfig={merchantConfig}
         onSubmitOrder={handleSubmitOrder}
+        existingOrderIds={orders.map((o) => o.id)}
       />
 
       <OrderConfirmationModal
         order={confirmedOrder}
         merchantConfig={merchantConfig}
         onClose={() => setConfirmedOrder(null)}
+        onMarkWaDispatched={handleMarkWaDispatched}
         onViewInAdmin={() => {
           setConfirmedOrder(null);
-          setCurrentView('admin');
+          handleViewChange('admin');
         }}
       />
 

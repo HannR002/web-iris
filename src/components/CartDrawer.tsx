@@ -98,7 +98,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <div className="flex gap-3">
                   {/* Thumbnail */}
                   <div className="w-18 h-18 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 shrink-0">
-                    <FloralIllustration type={item.product.imageType} className="w-full h-full" />
+                    {item.product.imageUrl ? (
+                      <img
+                        src={item.product.imageUrl}
+                        alt={item.product.name}
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <FloralIllustration type={item.product.imageType} className="w-full h-full" />
+                    )}
                   </div>
 
                   {/* Info */}
@@ -151,6 +162,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </p>
                 )}
 
+                {/* Out of Stock Warning for item */}
+                {item.product.stockStatus === 'habis' && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-700 px-2 py-1 rounded text-[11px] font-medium flex items-center justify-between">
+                    <span>⚠️ Stok produk ini sudah habis</span>
+                    <button
+                      onClick={() => onRemoveItem(item.id)}
+                      className="underline font-bold hover:text-rose-900"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                )}
+
                 {/* Quantity & Item Subtotal */}
                 <div className="flex items-center justify-between pt-2 border-t border-stone-100">
                   <div className="flex items-center border border-stone-300 rounded-md overflow-hidden bg-white">
@@ -170,6 +194,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       type="button"
                       onClick={() => onUpdateQuantity(item.id, item.quantity + 1)}
                       className="px-2 py-1 text-stone-600 hover:bg-stone-100 transition-colors"
+                      disabled={item.product.stockStatus === 'habis'}
                       aria-label="Tambah jumlah"
                     >
                       <Plus className="w-3 h-3" />
@@ -199,13 +224,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               * Ongkos kirim dihitung berdasarkan kecamatan di Kota Jambi pada langkah berikutnya.
             </p>
 
-            <button
-              onClick={onProceedToCheckout}
-              className="w-full py-3.5 bg-[#8B2635] hover:bg-[#721F2B] text-white rounded-lg font-semibold text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>Lanjut ke Pengisian Data Pengiriman</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {items.some((it) => it.product.stockStatus === 'habis') ? (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-xs text-center font-medium">
+                Ada produk yang habis di keranjang Anda. Harap hapus produk tersebut untuk melanjutkan ke formulir pengantaran.
+              </div>
+            ) : (
+              <button
+                onClick={onProceedToCheckout}
+                className="w-full py-3.5 bg-[#8B2635] hover:bg-[#721F2B] text-white rounded-lg font-semibold text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>Lanjut ke Pengisian Data Pengiriman</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
         )}
 

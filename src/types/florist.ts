@@ -45,7 +45,9 @@ export type Product = {
     | 'wedding-bridal'
     | 'hamper-deluxe'
     | 'hamper-fruit';
+  imageUrl?: string;
   isPopular?: boolean;
+  isArchived?: boolean;
 };
 
 export type GreetingCard = {
@@ -106,6 +108,7 @@ export type Order = {
   totalAmount: number;
   status: OrderStatus;
   createdAt: string;
+  waDispatched?: boolean;
 };
 
 export type MerchantConfig = {

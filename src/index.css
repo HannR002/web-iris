@@ -28,3 +28,38 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a29e;
 }
+
+/* Print Styles for Florist Work Slips & Delivery Orders */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide everything on page during print except the printable slip */
+  body * {
+    visibility: hidden;
+  }
+
+  #printable-slip, #printable-slip * {
+    visibility: visible;
+  }
+
+  #printable-slip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 1.5cm !important;
+    background: white !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+    border: 2px solid #000 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}

@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { FlowerColorVariant, Product } from '../types/florist.ts';
 import { formatIDR } from '../utils/floristLogic.ts';
 import { FloralIllustration } from './FloralIllustration.tsx';
-import { X, Check, Clock, Plus, Minus, FileText, ShoppingBag, AlertCircle } from 'lucide-react';
+import { X, Check, Clock, Plus, Minus, ShoppingBag, AlertCircle, Ban } from 'lucide-react';
 
 type ProductDetailModalProps = {
   product: Product | null;
@@ -21,17 +21,35 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onClose,
   onAddToCart,
 }) => {
-  if (!product) return null;
-
+  // Always call all hooks unconditionally at top level
   const [quantity, setQuantity] = useState(1);
-  const [selectedColor, setSelectedColor] = useState<FlowerColorVariant>(
-    product.availableColors[0] || { id: 'default', name: 'Standar Florist', hex: '#FFCBA4' }
-  );
+  const [selectedColor, setSelectedColor] = useState<FlowerColorVariant>({
+    id: 'default',
+    name: 'Standar Florist',
+    hex: '#FFCBA4',
+  });
   const [recipientTo, setRecipientTo] = useState('');
   const [greetingMessage, setGreetingMessage] = useState('');
   const [senderFrom, setSenderFrom] = useState('');
   const [customNotes, setCustomNotes] = useState('');
   const [addedToast, setAddedToast] = useState(false);
+  const [imageError, setImageError] = useState(false);
+
+  // Synchronize and reset form state whenever a different product is selected
+  useEffect(() => {
+    if (product) {
+      setQuantity(1);
+      setSelectedColor(
+        product.availableColors[0] || { id: 'default', name: 'Standar Florist', hex: '#FFCBA4' }
+      );
+      setRecipientTo('');
+      setGreetingMessage('');
+      setSenderFrom('');
+      setCustomNotes('');
+      setAddedToast(false);
+      setImageError(false);
+    }
+  }, [product?.id]);
 
   // Quick greetings templates
   const greetingTemplates = [
@@ -61,8 +79,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     setGreetingMessage(text);
   };
 
+  // Guard rendered content after hooks
+  if (!product) return null;
+
+  const isOutOfStock = product.stockStatus === 'habis';
+
   const handleAddToCartSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isOutOfStock) return;
+
     onAddToCart(
       product,
       quantity,
@@ -107,12 +132,38 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         {/* Modal Scrollable Body */}
         <form onSubmit={handleAddToCartSubmit} className="overflow-y-auto p-5 sm:p-6 space-y-6 flex-1">
           
+          {/* Out of Stock Warning Banner */}
+          {isOutOfStock && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
+              <Ban className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>
+                <strong>Stok Bunga Habis:</strong> Rangkaian ini sedang tidak tersedia untuk dipesan hari ini. Silakan pilih rangkaian bunga lainnya.
+              </span>
+            </div>
+          )}
+
           {/* Top Overview: Visual + Specs */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-5 items-start">
             
             {/* Visual Box (5 cols) */}
-            <div className="sm:col-span-5 rounded-xl overflow-hidden border border-stone-200 bg-stone-100 aspect-[4/3]">
-              <FloralIllustration type={product.imageType} className="w-full h-full" />
+            <div className="sm:col-span-5 rounded-xl overflow-hidden border border-stone-200 bg-stone-100 aspect-[4/3] relative">
+              {product.imageUrl && !imageError ? (
+                <img
+                  src={product.imageUrl}
+                  alt={product.name}
+                  onError={() => setImageError(true)}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <FloralIllustration type={product.imageType} className="w-full h-full" />
+              )}
+              {isOutOfStock && (
+                <div className="absolute inset-0 bg-stone-900/50 backdrop-blur-2xs flex items-center justify-center p-3 text-center">
+                  <span className="bg-rose-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm">
+                    STOK BUNGA HABIS HARI INI
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Product Meta (7 cols) */}
@@ -121,8 +172,20 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <span className="font-mono text-2xl font-bold text-stone-900 tabular-nums">
                   {formatIDR(product.price)}
                 </span>
-                <span className="text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md font-medium border border-emerald-200">
-                  {product.stockStatus === 'preorder' ? 'Pre-Order 1 Hari' : 'Bunga Segar Siap Rangkai'}
+                <span
+                  className={`text-xs px-2.5 py-1 rounded-md font-medium border ${
+                    isOutOfStock
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : product.stockStatus === 'preorder'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  {isOutOfStock
+                    ? 'Habis Hari Ini'
+                    : product.stockStatus === 'preorder'
+                    ? 'Pre-Order 1 Hari'
+                    : 'Bunga Segar Siap Rangkai'}
                 </span>
               </div>
 
@@ -156,11 +219,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   <button
                     key={color.id}
                     type="button"
+                    disabled={isOutOfStock}
                     onClick={() => setSelectedColor(color)}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-xs font-medium transition-all text-left cursor-pointer ${
-                      isSelected
-                        ? 'border-[#8B2635] bg-[#8B2635]/5 text-stone-900 ring-1 ring-[#8B2635]'
-                        : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                    className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-xs font-medium transition-all text-left ${
+                      isOutOfStock
+                        ? 'opacity-50 cursor-not-allowed border-stone-200 bg-stone-50'
+                        : isSelected
+                        ? 'border-[#8B2635] bg-[#8B2635]/5 text-stone-900 ring-1 ring-[#8B2635] cursor-pointer'
+                        : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700 cursor-pointer'
                     }`}
                   >
                     <span
@@ -192,8 +258,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   <button
                     key={tpl.label}
                     type="button"
+                    disabled={isOutOfStock}
                     onClick={() => handleApplyTemplate(tpl.text)}
-                    className="text-xs px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md transition-colors cursor-pointer"
+                    className="text-xs px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md transition-colors cursor-pointer disabled:opacity-50"
                   >
                     + {tpl.label}
                   </button>
@@ -208,10 +275,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </label>
                 <input
                   type="text"
+                  disabled={isOutOfStock}
                   value={recipientTo}
                   onChange={(e) => setRecipientTo(e.target.value)}
                   placeholder="Contoh: dr. Amanda / Sahabatku Tiara"
-                  className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#8B2635] focus:border-[#8B2635] bg-white"
+                  className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#8B2635] focus:border-[#8B2635] bg-white disabled:bg-stone-100 disabled:opacity-60"
                 />
               </div>
 
@@ -221,10 +289,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </label>
                 <input
                   type="text"
+                  disabled={isOutOfStock}
                   value={senderFrom}
                   onChange={(e) => setSenderFrom(e.target.value)}
                   placeholder="Contoh: Dimas & Keluarga / Anonim"
-                  className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#8B2635] focus:border-[#8B2635] bg-white"
+                  className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#8B2635] focus:border-[#8B2635] bg-white disabled:bg-stone-100 disabled:opacity-60"
                 />
               </div>
             </div>
@@ -240,11 +309,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </div>
               <textarea
                 value={greetingMessage}
+                disabled={isOutOfStock}
                 maxLength={250}
                 onChange={(e) => setGreetingMessage(e.target.value)}
                 rows={3}
                 placeholder="Tuliskan ucapan Anda di sini..."
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#8B2635] focus:border-[#8B2635] bg-white leading-relaxed resize-none"
+                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#8B2635] focus:border-[#8B2635] bg-white leading-relaxed resize-none disabled:bg-stone-100 disabled:opacity-60"
               />
             </div>
           </div>
@@ -259,10 +329,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             </p>
             <input
               type="text"
+              disabled={isOutOfStock}
               value={customNotes}
               onChange={(e) => setCustomNotes(e.target.value)}
               placeholder="Contoh: Tolong pilih mawar kuncup mekar, pita warna sage green"
-              className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#8B2635] focus:border-[#8B2635] bg-white"
+              className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#8B2635] focus:border-[#8B2635] bg-white disabled:bg-stone-100 disabled:opacity-60"
             />
           </div>
 
@@ -284,8 +355,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="p-2 hover:bg-stone-100 text-stone-600 transition-colors cursor-pointer"
-                  disabled={quantity <= 1}
+                  className="p-2 hover:bg-stone-100 text-stone-600 transition-colors cursor-pointer disabled:opacity-50"
+                  disabled={quantity <= 1 || isOutOfStock}
                   aria-label="Kurangi jumlah pesanan"
                 >
                   <Minus className="w-3.5 h-3.5" />
@@ -296,7 +367,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setQuantity(quantity + 1)}
-                  className="p-2 hover:bg-stone-100 text-stone-600 transition-colors cursor-pointer"
+                  className="p-2 hover:bg-stone-100 text-stone-600 transition-colors cursor-pointer disabled:opacity-50"
+                  disabled={isOutOfStock}
                   aria-label="Tambah jumlah pesanan"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -315,10 +387,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
               <button
                 type="submit"
-                className="px-6 py-3 bg-[#8B2635] hover:bg-[#721F2B] text-white rounded-lg font-semibold text-xs transition-colors shadow-xs flex items-center gap-2 cursor-pointer"
+                disabled={isOutOfStock}
+                className={`px-6 py-3 rounded-lg font-semibold text-xs transition-colors shadow-xs flex items-center gap-2 ${
+                  isOutOfStock
+                    ? 'bg-stone-300 text-stone-500 cursor-not-allowed'
+                    : 'bg-[#8B2635] hover:bg-[#721F2B] text-white cursor-pointer'
+                }`}
               >
                 <ShoppingBag className="w-4 h-4" />
-                <span>{addedToast ? 'Ditambahkan! ✓' : 'Tambah ke Keranjang'}</span>
+                <span>
+                  {isOutOfStock
+                    ? 'Stok Bunga Habis'
+                    : addedToast
+                    ? 'Ditambahkan! ✓'
+                    : 'Tambah ke Keranjang'}
+                </span>
               </button>
             </div>
 

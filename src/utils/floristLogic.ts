@@ -1,4 +1,4 @@
-import type { CheckoutFormData, MerchantConfig, Order, OrderStatus, Product, ProductCategory } from '../types/florist.ts';
+import type { CartItem, CheckoutFormData, MerchantConfig, Order, OrderStatus, Product, ProductCategory } from '../types/florist.ts';
 
 /**
  * Format number to Indonesian Rupiah (IDR) currency format.
@@ -63,6 +63,29 @@ export function calculateOrderTotal(
 }
 
 /**
+ * Returns current date string in Asia/Jakarta (WIB) timezone as YYYY-MM-DD.
+ */
+export function getWIBDateString(date: Date = new Date()): string {
+  // Use Intl with 'en-CA' locale which natively formats as YYYY-MM-DD
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(date);
+}
+
+/**
+ * Checks if a given YYYY-MM-DD date string is strictly in the past relative to WIB today.
+ */
+export function isPastWIBDate(dateStr: string, referenceDate: Date = new Date()): boolean {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return true;
+  const todayWIB = getWIBDateString(referenceDate);
+  return dateStr < todayWIB;
+}
+
+/**
  * Validates checkout form data with explicit Indonesian error messages.
  */
 export function validateCheckoutForm(form: CheckoutFormData): { isValid: boolean; errors: Record<string, string> } {
@@ -108,15 +131,8 @@ export function validateCheckoutForm(form: CheckoutFormData): { isValid: boolean
   // Delivery Date
   if (!form.deliveryDate) {
     errors.deliveryDate = 'Pilih tanggal pengiriman bunga';
-  } else {
-    // Check if delivery date is not in the past
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const chosenDate = new Date(form.deliveryDate);
-    chosenDate.setHours(0, 0, 0, 0);
-    if (chosenDate < today) {
-      errors.deliveryDate = 'Tanggal pengiriman tidak boleh di masa lalu';
-    }
+  } else if (isPastWIBDate(form.deliveryDate)) {
+    errors.deliveryDate = 'Tanggal pengiriman tidak boleh di masa lalu (waktu WIB)';
   }
 
   // Time Slot
@@ -294,3 +310,123 @@ export function getOrderStatusBadge(status: OrderStatus): {
       };
   }
 }
+
+/**
+ * Generates a unique, collision-resistant Order ID based on WIB date and random suffix.
+ * Format: NGA-YYMMDD-XXXX (e.g., NGA-261016-8K2P)
+ */
+export function generateOrderId(existingOrderIds: string[] = []): string {
+  const wibDate = getWIBDateString();
+  const compactDate = wibDate.replace(/-/g, '').slice(2);
+  const existingSet = new Set(existingOrderIds);
+
+  let candidate = '';
+  let attempts = 0;
+  do {
+    const randomHex = Math.random().toString(36).substring(2, 6).toUpperCase();
+    candidate = `NGA-${compactDate}-${randomHex}`;
+    attempts++;
+  } while (existingSet.has(candidate) && attempts < 20);
+
+  return candidate;
+}
+
+/**
+ * Synchronizes cart items with current catalog prices and availability.
+ * Flags out-of-stock items and recalculates subtotal if prices have changed.
+ */
+export function syncCartWithCatalog(
+  cart: CartItem[],
+  catalog: Product[]
+): {
+  updatedCart: CartItem[];
+  hasUnavailableItems: boolean;
+  unavailableProductNames: string[];
+  priceChangedCount: number;
+} {
+  const catalogMap = new Map(catalog.map((p) => [p.id, p]));
+  let hasUnavailableItems = false;
+  const unavailableProductNames: string[] = [];
+  let priceChangedCount = 0;
+
+  const updatedCart = cart.map((item) => {
+    const currentProduct = catalogMap.get(item.productId);
+    if (!currentProduct) {
+      hasUnavailableItems = true;
+      if (!unavailableProductNames.includes(item.product.name)) {
+        unavailableProductNames.push(item.product.name);
+      }
+      return item;
+    }
+
+    if (currentProduct.stockStatus === 'habis') {
+      hasUnavailableItems = true;
+      if (!unavailableProductNames.includes(currentProduct.name)) {
+        unavailableProductNames.push(currentProduct.name);
+      }
+    }
+
+    if (currentProduct.price !== item.product.price) {
+      priceChangedCount++;
+      return {
+        ...item,
+        product: currentProduct,
+        subtotal: currentProduct.price * item.quantity,
+      };
+    }
+
+    return {
+      ...item,
+      product: currentProduct,
+    };
+  });
+
+  return {
+    updatedCart,
+    hasUnavailableItems,
+    unavailableProductNames,
+    priceChangedCount,
+  };
+}
+
+/**
+ * Calculates dashboard metrics separating verified/confirmed revenue from unconfirmed initial reservations.
+ */
+export function calculateDashboardMetrics(orders: Order[]) {
+  const totalOrders = orders.length;
+
+  // Confirmed orders: confirmed, in production, ready, out for delivery, completed
+  const confirmedStatuses: OrderStatus[] = [
+    'dikonfirmasi',
+    'dirangkai',
+    'siap-kirim',
+    'diantar',
+    'selesai',
+  ];
+  const confirmedOrders = orders.filter((o) => confirmedStatuses.includes(o.status));
+  const confirmedRevenue = confirmedOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+  // Pending initial reservations (new orders not yet confirmed by florist)
+  const pendingOrders = orders.filter((o) => o.status === 'baru');
+  const pendingRevenue = pendingOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+  const inProductionCount = orders.filter(
+    (o) => o.status === 'baru' || o.status === 'dikonfirmasi' || o.status === 'dirangkai'
+  ).length;
+
+  const outForDeliveryCount = orders.filter(
+    (o) => o.status === 'siap-kirim' || o.status === 'diantar'
+  ).length;
+
+  const completedCount = orders.filter((o) => o.status === 'selesai').length;
+
+  return {
+    totalOrders,
+    confirmedRevenue,
+    pendingRevenue,
+    inProductionCount,
+    outForDeliveryCount,
+    completedCount,
+  };
+}
+

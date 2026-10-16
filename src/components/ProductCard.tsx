@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { Product } from '../types/florist.ts';
 import { formatIDR } from '../utils/floristLogic.ts';
 import { FloralIllustration } from './FloralIllustration.tsx';
-import { Clock, Eye } from 'lucide-react';
+import { Eye, Ban } from 'lucide-react';
 
 type ProductCardProps = {
   product: Product;
@@ -10,6 +10,10 @@ type ProductCardProps = {
 };
 
 export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect }) => {
+  const [imageError, setImageError] = useState(false);
+
+  const isOutOfStock = product.stockStatus === 'habis';
+
   const getStockLabel = () => {
     switch (product.stockStatus) {
       case 'tersedia':
@@ -19,7 +23,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect }) =
       case 'menipis':
         return <span className="text-amber-700 font-medium">Stok Terbatas</span>;
       case 'habis':
-        return <span className="text-stone-400 font-medium">Habis Hari Ini</span>;
+        return <span className="text-rose-600 font-medium flex items-center gap-1"><Ban className="w-3 h-3 inline" /> Habis Hari Ini</span>;
     }
   };
 
@@ -43,19 +47,45 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect }) =
   return (
     <div
       onClick={() => onSelect(product)}
-      className="group relative bg-white rounded-xl border border-stone-200/90 overflow-hidden shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col cursor-pointer"
+      className={`group relative bg-white rounded-xl border border-stone-200/90 overflow-hidden shadow-2xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col cursor-pointer ${
+        isOutOfStock ? 'opacity-90' : ''
+      }`}
     >
       {/* Product Image Area */}
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-stone-100">
-        <FloralIllustration type={product.imageType} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+        {product.imageUrl && !imageError ? (
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            onError={() => setImageError(true)}
+            loading="lazy"
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        ) : (
+          <FloralIllustration
+            type={product.imageType}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        )}
+
+        {/* Out of Stock Overlay */}
+        {isOutOfStock && (
+          <div className="absolute inset-0 bg-stone-900/50 backdrop-blur-2xs flex items-center justify-center p-2">
+            <span className="bg-rose-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-sm tracking-wide">
+              HABIS HARI INI
+            </span>
+          </div>
+        )}
 
         {/* Hover Quick Action Overlay */}
-        <div className="absolute inset-0 bg-stone-900/15 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span className="px-3 py-1.5 bg-white/95 text-stone-900 text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 backdrop-blur-xs">
-            <Eye className="w-3.5 h-3.5" />
-            <span>Lihat Detail & Ucapan</span>
-          </span>
-        </div>
+        {!isOutOfStock && (
+          <div className="absolute inset-0 bg-stone-900/15 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <span className="px-3 py-1.5 bg-white/95 text-stone-900 text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 backdrop-blur-xs">
+              <Eye className="w-3.5 h-3.5" />
+              <span>Lihat Detail & Ucapan</span>
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Card Content */}
@@ -91,13 +121,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelect }) =
 
           <button
             type="button"
+            disabled={isOutOfStock}
             onClick={(e) => {
               e.stopPropagation();
               onSelect(product);
             }}
-            className="px-3 py-1.5 text-xs font-medium text-[#8B2635] bg-[#8B2635]/10 hover:bg-[#8B2635] hover:text-white rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors flex items-center gap-1 ${
+              isOutOfStock
+                ? 'bg-stone-100 text-stone-400 cursor-not-allowed border border-stone-200'
+                : 'text-[#8B2635] bg-[#8B2635]/10 hover:bg-[#8B2635] hover:text-white cursor-pointer'
+            }`}
           >
-            <span>Pilih</span>
+            <span>{isOutOfStock ? 'Habis' : 'Pilih Rangkaian'}</span>
           </button>
         </div>
 

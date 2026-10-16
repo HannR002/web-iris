@@ -51,6 +51,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     estimatedPrepTime: '2 - 3 Jam',
     dimensions: 'Tinggi ~45 cm, Lebar ~35 cm',
     imageType: 'bouquet-rose',
+    imageUrl: 'https://images.unsplash.com/photo-1561181286-d3fee7d55364?auto=format&fit=crop&w=800&q=80',
     isPopular: true,
   },
   {
@@ -70,6 +71,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     estimatedPrepTime: '4 - 5 Jam',
     dimensions: '200 cm x 150 cm (Standing Kayu)',
     imageType: 'papan-selamat',
+    imageUrl: 'https://images.unsplash.com/photo-1526047932273-341f2a7631f9?auto=format&fit=crop&w=800&q=80',
     isPopular: true,
   },
   {
@@ -89,6 +91,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     estimatedPrepTime: '1 - 2 Jam',
     dimensions: 'Tinggi ~40 cm',
     imageType: 'wisuda-teddy',
+    imageUrl: 'https://images.unsplash.com/photo-1597848212624-a19eb35e2651?auto=format&fit=crop&w=800&q=80',
     isPopular: true,
   },
   {
@@ -107,6 +110,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     estimatedPrepTime: '3 - 4 Jam',
     dimensions: '200 cm x 150 cm',
     imageType: 'papan-duka',
+    imageUrl: 'https://images.unsplash.com/photo-1525310072745-f49212b5ac6d?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'prod-005',
@@ -125,6 +129,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     estimatedPrepTime: 'Pre-order 1 Hari',
     dimensions: 'Diameter ~28 cm',
     imageType: 'wedding-bridal',
+    imageUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80',
     isPopular: false,
   },
   {
@@ -143,6 +148,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     estimatedPrepTime: '2 - 3 Jam',
     dimensions: 'Tinggi ~50 cm',
     imageType: 'bouquet-rose',
+    imageUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=800&q=80',
     isPopular: true,
   },
   {
@@ -161,6 +167,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     estimatedPrepTime: '3 Jam',
     dimensions: 'Keranjang Anyaman Rotan 35x25 cm',
     imageType: 'hamper-fruit',
+    imageUrl: 'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?auto=format&fit=crop&w=800&q=80',
   },
   {
     id: 'prod-008',
@@ -178,6 +185,25 @@ export const INITIAL_PRODUCTS: Product[] = [
     estimatedPrepTime: '2 Jam',
     dimensions: 'Tinggi ~48 cm',
     imageType: 'bouquet-lily',
+    imageUrl: 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80',
+  },
+  {
+    id: 'prod-009',
+    name: 'Buket Tulip Segar Musim Semi (Habis Hari Ini)',
+    category: 'buket',
+    price: 420000,
+    stockStatus: 'habis',
+    description: 'Rangkaian 10 tangkai bunga tulip segar impor. Stok untuk pengiriman hari ini telah habis terjual, dapat dipesan kembali saat kuota batch berikutnya dibuka.',
+    flowerTypes: ['Tulip Segar', 'Baby Breath', 'Eucalyptus'],
+    availableColors: [
+      { id: 'c-tulip-pink', name: 'Soft Pink Tulip', hex: '#F06292' },
+      { id: 'c-tulip-yellow', name: 'Kuning Mentari', hex: '#FDD835' },
+    ],
+    cardIncluded: true,
+    estimatedPrepTime: 'Stok Habis (Restock 2 Hari)',
+    dimensions: 'Tinggi ~40 cm',
+    imageType: 'bouquet-rose',
+    imageUrl: 'https://images.unsplash.com/photo-1520763185298-1b434c919102?auto=format&fit=crop&w=800&q=80',
   },
 ];
 

@@ -8,6 +8,7 @@ type OrderConfirmationModalProps = {
   merchantConfig: MerchantConfig;
   onClose: () => void;
   onViewInAdmin?: () => void;
+  onMarkWaDispatched?: (orderId: string) => void;
 };
 
 export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
@@ -15,10 +16,15 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
   merchantConfig,
   onClose,
   onViewInAdmin,
+  onMarkWaDispatched,
 }) => {
+  // Always call hooks unconditionally at top level
+  const [copied, setCopied] = useState(false);
+  const [markedDispatched, setMarkedDispatched] = useState(false);
+
   if (!order) return null;
 
-  const [copied, setCopied] = useState(false);
+  const isDispatched = order.waDispatched || markedDispatched;
 
   const formattedMessage = generateWhatsAppOrderMessage(order, merchantConfig);
   const waUrl = createWhatsAppUrl(merchantConfig.whatsappNumber, formattedMessage);
@@ -79,12 +85,48 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
             </p>
           </div>
 
+          {/* Status Tracker Banner */}
+          <div className={`p-3.5 rounded-xl border text-xs flex items-center justify-between ${
+            isDispatched
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isDispatched ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <span>
+                Status Pesanan: <strong>{isDispatched ? 'Pesan WhatsApp Sudah Terkirim' : 'Menunggu Pengiriman Chat ke Florist'}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMarkedDispatched(true);
+                if (order && onMarkWaDispatched) {
+                  onMarkWaDispatched(order.id);
+                }
+              }}
+              className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
+                isDispatched
+                  ? 'bg-emerald-200 text-emerald-800'
+                  : 'bg-amber-200 hover:bg-amber-300 text-amber-900 cursor-pointer'
+              }`}
+            >
+              {isDispatched ? '✓ Sudah Ditandai' : 'Tandai Sudah Kirim'}
+            </button>
+          </div>
+
           {/* Primary Action Buttons */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <a
               href={waUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => {
+                setMarkedDispatched(true);
+                if (order && onMarkWaDispatched) {
+                  onMarkWaDispatched(order.id);
+                }
+              }}
               className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs transition-colors shadow-sm flex items-center justify-center gap-2"
             >
               <MessageCircle className="w-4 h-4" />

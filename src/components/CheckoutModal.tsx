@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { CartItem, CheckoutFormData, DeliveryDistrict, MerchantConfig, Order } from '../types/florist.ts';
-import { calculateOrderTotal, formatIDR, validateCheckoutForm } from '../utils/floristLogic.ts';
+import { calculateOrderTotal, formatIDR, generateOrderId, getWIBDateString, validateCheckoutForm } from '../utils/floristLogic.ts';
 import { JAMBI_DELIVERY_DISTRICTS, DELIVERY_TIME_SLOTS } from '../data/mockData.ts';
-import { X, MapPin, Calendar, Clock, User, Phone, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight } from 'lucide-react';
+import { X, MapPin, Calendar, Clock, User, Phone, CheckCircle2, AlertTriangle, ShieldCheck, ArrowRight, Ban } from 'lucide-react';
 
 type CheckoutModalProps = {
   isOpen: boolean;
@@ -10,6 +10,7 @@ type CheckoutModalProps = {
   items: CartItem[];
   merchantConfig: MerchantConfig;
   onSubmitOrder: (order: Order) => void;
+  existingOrderIds?: string[];
 };
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -18,14 +19,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   items,
   merchantConfig,
   onSubmitOrder,
+  existingOrderIds = [],
 }) => {
-  if (!isOpen || items.length === 0) return null;
-
-  // Default delivery date to tomorrow or today
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const defaultDateStr = tomorrow.toISOString().split('T')[0];
+  // Always invoke hooks unconditionally at top level
+  const todayWIB = getWIBDateString();
 
   const [formData, setFormData] = useState<CheckoutFormData>({
     customerName: '',
@@ -36,7 +33,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     deliveryDistrict: JAMBI_DELIVERY_DISTRICTS[0].name,
     deliveryAddress: '',
     addressLandmark: '',
-    deliveryDate: defaultDateStr,
+    deliveryDate: todayWIB,
     deliveryTimeSlot: DELIVERY_TIME_SLOTS[0].label,
     deliveryNotes: '',
     isAnonymousGift: false,
@@ -44,6 +41,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Clear errors when modal opens or closes
+  useEffect(() => {
+    if (isOpen) {
+      setFormErrors({});
+      setIsSubmitting(false);
+      // Ensure default delivery date is at least today WIB
+      setFormData((prev) => ({
+        ...prev,
+        deliveryDate: prev.deliveryDate < todayWIB ? todayWIB : prev.deliveryDate,
+      }));
+    }
+  }, [isOpen, todayWIB]);
 
   // Determine current district delivery fee
   const selectedDistrictObj = JAMBI_DELIVERY_DISTRICTS.find(
@@ -67,21 +77,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
+  const hasUnavailableItem = items.some((it) => it.product.stockStatus === 'habis');
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (hasUnavailableItem) {
+      setFormErrors({ general: 'Beberapa item di keranjang Anda telah habis. Mohon hapus sebelum checkout.' });
+      return;
+    }
+
     const validation = validateCheckoutForm(formData);
 
     if (!validation.isValid) {
       setFormErrors(validation.errors);
-      // Scroll to top of modal if there's an error
       return;
     }
 
     setIsSubmitting(true);
 
-    // Create unique Order ID
-    const randomSuffix = Math.floor(100 + Math.random() * 900);
-    const orderId = `NGA-2610-${randomSuffix}`;
+    // Create unique, non-colliding Order ID based on WIB date
+    const orderId = generateOrderId(existingOrderIds);
 
     const newOrder: Order = {
       id: orderId,
@@ -110,6 +125,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       onSubmitOrder(newOrder);
     }, 300);
   };
+
+  // Guard render AFTER hooks
+  if (!isOpen || items.length === 0) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 md:p-6 animate-in fade-in duration-200">
@@ -327,6 +345,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </label>
                     <input
                       type="date"
+                      min={todayWIB}
                       value={formData.deliveryDate}
                       onChange={(e) => handleInputChange('deliveryDate', e.target.value)}
                       className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-1 bg-white ${

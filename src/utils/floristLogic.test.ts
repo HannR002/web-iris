@@ -8,8 +8,13 @@ import {
   createWhatsAppUrl,
   filterProducts,
   getOrderStatusBadge,
+  getWIBDateString,
+  isPastWIBDate,
+  generateOrderId,
+  syncCartWithCatalog,
+  calculateDashboardMetrics,
 } from './floristLogic.ts';
-import type { CheckoutFormData, MerchantConfig, Order, Product } from '../types/florist.ts';
+import type { CartItem, CheckoutFormData, MerchantConfig, Order, Product } from '../types/florist.ts';
 
 test('formatIDR formats currency numbers correctly into Indonesian format', () => {
   assert.equal(formatIDR(0), 'Rp 0');
@@ -228,3 +233,150 @@ test('getOrderStatusBadge returns valid labels and steps', () => {
   assert.equal(doneBadge.label, 'Selesai');
   assert.equal(doneBadge.step, 6);
 });
+
+test('getWIBDateString and isPastWIBDate handle Asia/Jakarta timezone correctly', () => {
+  const wibToday = getWIBDateString();
+  assert.match(wibToday, /^\d{4}-\d{2}-\d{2}$/);
+
+  // Past date check
+  assert.equal(isPastWIBDate('2020-01-01'), true);
+  assert.equal(isPastWIBDate(''), true);
+  assert.equal(isPastWIBDate('invalid'), true);
+
+  // Today and future date check
+  assert.equal(isPastWIBDate(wibToday), false);
+  assert.equal(isPastWIBDate('2099-12-31'), false);
+});
+
+test('generateOrderId creates unique, correctly formatted order identifiers', () => {
+  const id1 = generateOrderId();
+  const id2 = generateOrderId([id1]);
+
+  assert.match(id1, /^NGA-\d{6}-[A-Z0-9]{4}$/);
+  assert.match(id2, /^NGA-\d{6}-[A-Z0-9]{4}$/);
+  assert.notEqual(id1, id2);
+});
+
+test('syncCartWithCatalog detects out-of-stock items and price changes', () => {
+  const catalog: Product[] = [
+    {
+      id: 'p1',
+      name: 'Mawar Merah',
+      category: 'buket',
+      price: 300000, // Price updated from 250000 to 300000
+      stockStatus: 'tersedia',
+      description: '',
+      flowerTypes: [],
+      availableColors: [],
+      cardIncluded: true,
+      estimatedPrepTime: '1 Jam',
+      imageType: 'bouquet-rose',
+    },
+    {
+      id: 'p2',
+      name: 'Papan Selamat',
+      category: 'papan-bunga',
+      price: 500000,
+      stockStatus: 'habis', // Now out of stock
+      description: '',
+      flowerTypes: [],
+      availableColors: [],
+      cardIncluded: false,
+      estimatedPrepTime: '2 Jam',
+      imageType: 'papan-selamat',
+    },
+  ];
+
+  const cart: CartItem[] = [
+    {
+      id: 'c1',
+      productId: 'p1',
+      product: { ...catalog[0], price: 250000 },
+      quantity: 2,
+      selectedColor: { id: 'c', name: 'Merah', hex: '#FF0000' },
+      cardGreeting: { to: '', message: '', from: '' },
+      customNotes: '',
+      subtotal: 500000,
+    },
+    {
+      id: 'c2',
+      productId: 'p2',
+      product: catalog[1],
+      quantity: 1,
+      selectedColor: { id: 'c', name: 'Emas', hex: '#FFD700' },
+      cardGreeting: { to: '', message: '', from: '' },
+      customNotes: '',
+      subtotal: 500000,
+    },
+  ];
+
+  const syncResult = syncCartWithCatalog(cart, catalog);
+  assert.equal(syncResult.hasUnavailableItems, true);
+  assert.ok(syncResult.unavailableProductNames.includes('Papan Selamat'));
+  assert.equal(syncResult.priceChangedCount, 1);
+  assert.equal(syncResult.updatedCart[0].product.price, 300000);
+  assert.equal(syncResult.updatedCart[0].subtotal, 600000);
+});
+
+test('calculateDashboardMetrics cleanly separates confirmed revenue from unverified new orders', () => {
+  const dummyOrders: Order[] = [
+    {
+      id: 'NGA-001',
+      customerName: 'A',
+      customerPhone: '08123456789',
+      recipientName: 'B',
+      recipientPhone: '08123456789',
+      deliveryDistrict: 'Telanaipura',
+      deliveryAddress: 'Jl. A',
+      deliveryDate: '2026-10-20',
+      deliveryTimeSlot: 'Pagi',
+      items: [],
+      itemsSubtotal: 300000,
+      deliveryFee: 15000,
+      totalAmount: 315000,
+      status: 'baru', // Unverified reservation
+      createdAt: '2026-10-16T00:00:00Z',
+    },
+    {
+      id: 'NGA-002',
+      customerName: 'C',
+      customerPhone: '08123456789',
+      recipientName: 'D',
+      recipientPhone: '08123456789',
+      deliveryDistrict: 'Danau Sipin',
+      deliveryAddress: 'Jl. B',
+      deliveryDate: '2026-10-20',
+      deliveryTimeSlot: 'Siang',
+      items: [],
+      itemsSubtotal: 500000,
+      deliveryFee: 0,
+      totalAmount: 500000,
+      status: 'dirangkai', // Confirmed / in production
+      createdAt: '2026-10-16T00:00:00Z',
+    },
+    {
+      id: 'NGA-003',
+      customerName: 'E',
+      customerPhone: '08123456789',
+      recipientName: 'F',
+      recipientPhone: '08123456789',
+      deliveryDistrict: 'Kotabaru',
+      deliveryAddress: 'Jl. C',
+      deliveryDate: '2026-10-20',
+      deliveryTimeSlot: 'Sore',
+      items: [],
+      itemsSubtotal: 200000,
+      deliveryFee: 20000,
+      totalAmount: 220000,
+      status: 'dibatalkan', // Cancelled
+      createdAt: '2026-10-16T00:00:00Z',
+    },
+  ];
+
+  const metrics = calculateDashboardMetrics(dummyOrders);
+  assert.equal(metrics.totalOrders, 3);
+  assert.equal(metrics.pendingRevenue, 315000); // Only order 1
+  assert.equal(metrics.confirmedRevenue, 500000); // Only order 2
+  assert.equal(metrics.inProductionCount, 2); // order 1 ('baru') + order 2 ('dirangkai')
+});
+
